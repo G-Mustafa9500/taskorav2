@@ -14,17 +14,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useAuth, AppRole } from "@/contexts/AuthContext";
+import { Badge } from "@/components/ui/badge";
 
 const getMenuItems = (role: AppRole | null) => {
   const baseItems = [
     { icon: CheckSquare, label: "Tasks", path: "/tasks" },
     { icon: FolderOpen, label: "Files", path: "/files" },
     { icon: Palette, label: "Whiteboard", path: "/whiteboard" },
-    { icon: MessageCircle, label: "Chat", path: "/chat" },
+    { icon: MessageCircle, label: "Chat", path: "/chat", comingSoon: true },
+    { icon: Bot, label: "AI Assistant", path: "/ai-assistant" },
     { icon: Bell, label: "Notifications", path: "/notifications" },
     { icon: Settings, label: "Settings", path: "/settings" },
   ];
@@ -117,19 +120,31 @@ export function DashboardSidebar() {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
+          const itemWithBadge = item as typeof item & { comingSoon?: boolean };
           return (
             <Link
               key={item.path}
-              to={item.path}
+              to={itemWithBadge.comingSoon ? "#" : item.path}
+              onClick={(e) => itemWithBadge.comingSoon && e.preventDefault()}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                isActive
+                isActive && !itemWithBadge.comingSoon
                   ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                itemWithBadge.comingSoon && "cursor-not-allowed opacity-60"
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && (
+                <span className="flex items-center gap-2">
+                  {item.label}
+                  {itemWithBadge.comingSoon && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      Soon
+                    </Badge>
+                  )}
+                </span>
+              )}
             </Link>
           );
         })}

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -5,6 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Building2,
   User,
@@ -14,16 +18,134 @@ import {
   Users,
   Plus,
   Trash2,
+  Loader2,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
-const teamMembers = [
-  { id: "1", name: "John Doe", email: "john@taskora.com", role: "Super Admin", avatar: "JD" },
-  { id: "2", name: "Sarah Johnson", email: "sarah@taskora.com", role: "Manager", avatar: "SJ" },
-  { id: "3", name: "Mike Chen", email: "mike@taskora.com", role: "Staff", avatar: "MC" },
-  { id: "4", name: "Emma Wilson", email: "emma@taskora.com", role: "Staff", avatar: "EW" },
-];
+interface TeamMember {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+}
 
 export default function Settings() {
+  const { user } = useAuth();
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchTeamMembers = async () => {
+    try {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (profilesError) throw profilesError;
+
+      const { data: roles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("*");
+
+      if (rolesError) throw rolesError;
+
+      const membersWithRoles = profiles?.map((profile) => {
+        const userRole = roles?.find((r) => r.user_id === profile.user_id);
+        return {
+          id: profile.id,
+          user_id: profile.user_id,
+          full_name: profile.full_name,
+          email: profile.email,
+          role: userRole?.role || "staff",
+        };
+      }) || [];
+
+      setTeamMembers(membersWithRoles);
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      toast.error("Failed to load team members");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTeamMembers();
+  }, []);
+
+  const handleDeleteMember = async (member: TeamMember) => {
+    if (member.user_id === user?.id) {
+      toast.error("You cannot delete yourself");
+      return;
+    }
+
+    setDeletingId(member.id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ userId: member.user_id }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete member");
+      }
+
+      toast.success(`${member.full_name} has been removed`);
+      fetchTeamMembers();
+    } catch (error: any) {
+      console.error("Error deleting member:", error);
+      toast.error(error.message || "Failed to delete member");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case "super_admin":
+        return "Super Admin";
+      case "manager":
+        return "Manager";
+      case "staff":
+        return "Staff";
+      default:
+        return role;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -131,50 +253,87 @@ export default function Settings() {
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {teamMembers.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center justify-between rounded-lg border border-border p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary">
-                        {member.avatar}
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {teamMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between rounded-lg border border-border p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary">
+                          {getInitials(member.full_name)}
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">
+                            {member.full_name}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {member.email}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">
-                          {member.name}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {member.email}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Badge
-                        variant={
-                          member.role === "Super Admin"
-                            ? "default"
-                            : member.role === "Manager"
-                            ? "secondary"
-                            : "outline"
-                        }
-                      >
-                        {member.role}
-                      </Badge>
-                      {member.role !== "Super Admin" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
+                      <div className="flex items-center gap-3">
+                        <Badge
+                          variant={
+                            member.role === "super_admin"
+                              ? "default"
+                              : member.role === "manager"
+                              ? "secondary"
+                              : "outline"
+                          }
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
+                          {getRoleLabel(member.role)}
+                        </Badge>
+                        {member.role !== "super_admin" && member.user_id !== user?.id && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                disabled={deletingId === member.id}
+                              >
+                                {deletingId === member.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove Team Member</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to remove {member.full_name}? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteMember(member)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Remove
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                  {teamMembers.length === 0 && (
+                    <p className="text-center py-8 text-muted-foreground">
+                      No team members found
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
