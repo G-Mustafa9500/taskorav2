@@ -3,18 +3,30 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckSquare, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { CheckSquare, Eye, EyeOff, ArrowLeft, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { signIn, role } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo: Navigate to dashboard
-    navigate("/dashboard");
+    setLoading(true);
+    try {
+      await signIn(email, password);
+      // Navigate based on role after successful login
+      // Role will be fetched by AuthContext
+      navigate("/admin"); // Default, will be redirected by router if not admin
+    } catch (error) {
+      // Error is already handled in AuthContext
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,18 +65,13 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={loading}
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm text-primary hover:underline"
-                >
-                  Forgot password?
-                </Link>
               </div>
               <div className="relative">
                 <Input
@@ -74,6 +81,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={loading}
                 />
                 <Button
                   type="button"
@@ -91,7 +99,8 @@ export default function Login() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign In
             </Button>
           </form>
