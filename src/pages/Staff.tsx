@@ -1,181 +1,171 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Search,
   Plus,
   Mail,
-  Phone,
-  MapPin,
   Calendar,
-  FileText,
-  MessageCircle,
-  MoreVertical,
+  Trash2,
+  UserPlus,
+  Users,
+  Loader2,
+  Shield,
+  User,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { AddUserDialog } from "@/components/admin/AddUserDialog";
 
 interface StaffMember {
   id: string;
-  name: string;
+  user_id: string;
+  full_name: string;
   email: string;
   role: string;
-  department: string;
-  avatar: string;
-  status: "online" | "offline" | "away";
-  taskCount: number;
-  completedTasks: number;
-  phone: string;
-  location: string;
-  joinDate: string;
+  is_active: boolean;
+  created_at: string;
 }
 
-const staffData: StaffMember[] = [
-  {
-    id: "1",
-    name: "Sarah Johnson",
-    email: "sarah@taskora.com",
-    role: "UI Designer",
-    department: "Design",
-    avatar: "SJ",
-    status: "online",
-    taskCount: 8,
-    completedTasks: 5,
-    phone: "+1 234 567 890",
-    location: "New York, USA",
-    joinDate: "Jan 15, 2024",
-  },
-  {
-    id: "2",
-    name: "Mike Chen",
-    email: "mike@taskora.com",
-    role: "Frontend Developer",
-    department: "Engineering",
-    avatar: "MC",
-    status: "online",
-    taskCount: 12,
-    completedTasks: 9,
-    phone: "+1 234 567 891",
-    location: "San Francisco, USA",
-    joinDate: "Mar 02, 2024",
-  },
-  {
-    id: "3",
-    name: "Emma Wilson",
-    email: "emma@taskora.com",
-    role: "Backend Developer",
-    department: "Engineering",
-    avatar: "EW",
-    status: "away",
-    taskCount: 6,
-    completedTasks: 4,
-    phone: "+1 234 567 892",
-    location: "Austin, USA",
-    joinDate: "Feb 10, 2024",
-  },
-  {
-    id: "4",
-    name: "Alex Kumar",
-    email: "alex@taskora.com",
-    role: "Product Manager",
-    department: "Product",
-    avatar: "AK",
-    status: "online",
-    taskCount: 15,
-    completedTasks: 11,
-    phone: "+1 234 567 893",
-    location: "Seattle, USA",
-    joinDate: "Dec 05, 2023",
-  },
-  {
-    id: "5",
-    name: "Lisa Park",
-    email: "lisa@taskora.com",
-    role: "Marketing Lead",
-    department: "Marketing",
-    avatar: "LP",
-    status: "offline",
-    taskCount: 9,
-    completedTasks: 7,
-    phone: "+1 234 567 894",
-    location: "Los Angeles, USA",
-    joinDate: "Jan 20, 2024",
-  },
-  {
-    id: "6",
-    name: "David Brown",
-    email: "david@taskora.com",
-    role: "DevOps Engineer",
-    department: "Engineering",
-    avatar: "DB",
-    status: "online",
-    taskCount: 7,
-    completedTasks: 6,
-    phone: "+1 234 567 895",
-    location: "Chicago, USA",
-    joinDate: "Apr 01, 2024",
-  },
-];
-
-const staffTasks = [
-  { id: "1", title: "Design Homepage Mockup", status: "done", priority: "high" },
-  { id: "2", title: "Create Icon Set", status: "in_progress", priority: "medium" },
-  { id: "3", title: "Update Brand Guidelines", status: "todo", priority: "low" },
-];
-
-const attendanceHistory = [
-  { date: "Jan 16, 2024", status: "present", checkIn: "9:00 AM", checkOut: "6:00 PM" },
-  { date: "Jan 15, 2024", status: "present", checkIn: "9:15 AM", checkOut: "6:30 PM" },
-  { date: "Jan 14, 2024", status: "absent", checkIn: "-", checkOut: "-" },
-  { date: "Jan 13, 2024", status: "present", checkIn: "8:45 AM", checkOut: "5:45 PM" },
-];
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "online":
-      return "bg-success";
-    case "away":
-      return "bg-warning";
-    default:
-      return "bg-muted-foreground";
-  }
-};
-
-const getPriorityColor = (priority: string) => {
-  switch (priority) {
-    case "high":
-      return "bg-destructive/10 text-destructive";
-    case "medium":
-      return "bg-warning/10 text-warning";
-    default:
-      return "bg-muted text-muted-foreground";
-  }
-};
-
-const getTaskStatusColor = (status: string) => {
-  switch (status) {
-    case "done":
-      return "bg-success/10 text-success";
-    case "in_progress":
-      return "bg-warning/10 text-warning";
-    default:
-      return "bg-muted text-muted-foreground";
-  }
-};
-
 export default function Staff() {
+  const { role: userRole } = useAuth();
+  const { toast } = useToast();
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<StaffMember | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const filteredStaff = staffData.filter(
+  const isSuperAdmin = userRole === "super_admin";
+
+  const fetchStaffMembers = async () => {
+    try {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (profilesError) throw profilesError;
+
+      const { data: roles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("*");
+
+      if (rolesError) throw rolesError;
+
+      const combined = profiles?.map((p) => ({
+        ...p,
+        role: roles?.find((r) => r.user_id === p.user_id)?.role || "staff",
+      })) || [];
+
+      setStaffMembers(combined);
+    } catch (error) {
+      console.error("Error fetching staff:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load staff members",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStaffMembers();
+  }, []);
+
+  const handleDeleteClick = (staff: StaffMember, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setStaffToDelete(staff);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!staffToDelete) return;
+
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-user", {
+        body: { userId: staffToDelete.user_id },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "User deleted",
+        description: `${staffToDelete.full_name} has been removed.`,
+      });
+
+      setDeleteDialogOpen(false);
+      setStaffToDelete(null);
+      setSelectedStaff(null);
+      fetchStaffMembers();
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete user",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const filteredStaff = staffMembers.filter(
     (staff) =>
-      staff.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      staff.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      staff.department.toLowerCase().includes(searchQuery.toLowerCase())
+      staff.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      staff.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      staff.role.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+      case "super_admin":
+        return <Shield className="h-4 w-4" />;
+      case "manager":
+        return <Users className="h-4 w-4" />;
+      default:
+        return <User className="h-4 w-4" />;
+    }
+  };
+
+  const getRoleBadgeVariant = (role: string) => {
+    switch (role) {
+      case "super_admin":
+        return "default";
+      case "manager":
+        return "secondary";
+      default:
+        return "outline";
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -185,17 +175,19 @@ export default function Staff() {
           <h1 className="text-2xl font-bold text-foreground">Staff</h1>
           <p className="text-muted-foreground">Manage your team members</p>
         </div>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add Staff
-        </Button>
+        {isSuperAdmin && (
+          <Button onClick={() => setShowAddUser(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add Staff
+          </Button>
+        )}
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search by name, role, or department..."
+          placeholder="Search by name, email, or role..."
           className="pl-10"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -203,58 +195,73 @@ export default function Staff() {
       </div>
 
       {/* Staff Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredStaff.map((staff) => (
-          <Card
-            key={staff.id}
-            className="cursor-pointer border-border shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
-            onClick={() => setSelectedStaff(staff)}
-          >
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : filteredStaff.length === 0 ? (
+        <div className="text-center py-12">
+          <Users className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+          <p className="mt-4 text-muted-foreground">
+            {searchQuery ? "No staff members match your search" : "No team members yet"}
+          </p>
+          {isSuperAdmin && !searchQuery && (
+            <Button className="mt-4" onClick={() => setShowAddUser(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add your first team member
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredStaff.map((staff) => (
+            <Card
+              key={staff.id}
+              className="cursor-pointer border-border shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+              onClick={() => setSelectedStaff(staff)}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-                      {staff.avatar}
+                      {staff.full_name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()}
                     </div>
-                    <span
-                      className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card ${getStatusColor(
-                        staff.status
-                      )}`}
-                    />
+                    <div>
+                      <h3 className="font-semibold text-foreground">{staff.full_name}</h3>
+                      <p className="text-sm text-muted-foreground">{staff.email}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{staff.name}</h3>
-                    <p className="text-sm text-muted-foreground">{staff.role}</p>
-                  </div>
+                  {isSuperAdmin && staff.role !== "super_admin" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => handleDeleteClick(staff, e)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </div>
 
-              <div className="mt-4 flex items-center gap-4">
-                <Badge variant="secondary" className="text-xs">
-                  {staff.department}
-                </Badge>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <FileText className="h-3 w-3" />
-                  <span>
-                    {staff.completedTasks}/{staff.taskCount} tasks
+                <div className="mt-4 flex items-center gap-3">
+                  <Badge variant={getRoleBadgeVariant(staff.role) as any} className="gap-1">
+                    {getRoleIcon(staff.role)}
+                    {staff.role.replace("_", " ").toUpperCase()}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {formatDate(staff.created_at)}
                   </span>
                 </div>
-              </div>
-
-              <div className="mt-3">
-                <Progress
-                  value={(staff.completedTasks / staff.taskCount) * 100}
-                  className="h-1.5"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Staff Detail Panel */}
       <Sheet open={!!selectedStaff} onOpenChange={() => setSelectedStaff(null)}>
@@ -263,21 +270,18 @@ export default function Staff() {
             <>
               <SheetHeader className="pb-6">
                 <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-2xl font-semibold text-primary">
-                      {selectedStaff.avatar}
-                    </div>
-                    <span
-                      className={`absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-card ${getStatusColor(
-                        selectedStaff.status
-                      )}`}
-                    />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-2xl font-semibold text-primary">
+                    {selectedStaff.full_name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
                   </div>
                   <div>
-                    <SheetTitle className="text-xl">{selectedStaff.name}</SheetTitle>
-                    <p className="text-muted-foreground">{selectedStaff.role}</p>
-                    <Badge variant="secondary" className="mt-1">
-                      {selectedStaff.department}
+                    <SheetTitle className="text-xl">{selectedStaff.full_name}</SheetTitle>
+                    <Badge variant={getRoleBadgeVariant(selectedStaff.role) as any} className="mt-1 gap-1">
+                      {getRoleIcon(selectedStaff.role)}
+                      {selectedStaff.role.replace("_", " ").toUpperCase()}
                     </Badge>
                   </div>
                 </div>
@@ -290,103 +294,61 @@ export default function Staff() {
                   <span className="text-foreground">{selectedStaff.email}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-foreground">{selectedStaff.phone}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-foreground">{selectedStaff.location}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-foreground">Joined {selectedStaff.joinDate}</span>
+                  <span className="text-foreground">Joined {formatDate(selectedStaff.created_at)}</span>
                 </div>
               </div>
-
-              {/* Tabs */}
-              <Tabs defaultValue="tasks" className="mt-6">
-                <TabsList className="w-full">
-                  <TabsTrigger value="tasks" className="flex-1">
-                    Tasks
-                  </TabsTrigger>
-                  <TabsTrigger value="attendance" className="flex-1">
-                    Attendance
-                  </TabsTrigger>
-                  <TabsTrigger value="files" className="flex-1">
-                    Files
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="tasks" className="mt-4 space-y-3">
-                  {staffTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between rounded-lg border border-border p-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{task.title}</p>
-                        <div className="mt-1 flex gap-2">
-                          <Badge className={getTaskStatusColor(task.status)} variant="secondary">
-                            {task.status.replace("_", " ")}
-                          </Badge>
-                          <Badge className={getPriorityColor(task.priority)} variant="secondary">
-                            {task.priority}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </TabsContent>
-
-                <TabsContent value="attendance" className="mt-4 space-y-3">
-                  {attendanceHistory.map((record, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between rounded-lg border border-border p-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{record.date}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {record.checkIn} - {record.checkOut}
-                        </p>
-                      </div>
-                      <Badge
-                        className={
-                          record.status === "present"
-                            ? "bg-success/10 text-success"
-                            : "bg-destructive/10 text-destructive"
-                        }
-                        variant="secondary"
-                      >
-                        {record.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </TabsContent>
-
-                <TabsContent value="files" className="mt-4">
-                  <div className="rounded-lg border border-dashed border-border p-8 text-center">
-                    <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">No files uploaded yet</p>
-                  </div>
-                </TabsContent>
-              </Tabs>
 
               {/* Actions */}
-              <div className="mt-6 flex gap-3">
-                <Button className="flex-1">
-                  <MessageCircle className="h-4 w-4" />
-                  Send Message
-                </Button>
-                <Button variant="outline" className="flex-1">
-                  <FileText className="h-4 w-4" />
-                  Assign Task
-                </Button>
-              </div>
+              {isSuperAdmin && selectedStaff.role !== "super_admin" && (
+                <div className="mt-6">
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => {
+                      setStaffToDelete(selectedStaff);
+                      setDeleteDialogOpen(true);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Remove User
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Add User Dialog */}
+      <AddUserDialog
+        open={showAddUser}
+        onOpenChange={setShowAddUser}
+        onUserAdded={fetchStaffMembers}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {staffToDelete?.full_name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this user's account and all associated data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
