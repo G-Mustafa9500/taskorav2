@@ -50,6 +50,53 @@ export type Database = {
         }
         Relationships: []
       }
+      file_metadata: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          storage_path: string
+          subject: string | null
+          task_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          storage_path: string
+          subject?: string | null
+          task_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          storage_path?: string
+          subject?: string | null
+          task_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_metadata_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           created_at: string
@@ -92,6 +139,7 @@ export type Database = {
           full_name: string
           id: string
           is_active: boolean | null
+          manager_id: string | null
           updated_at: string
           user_id: string
         }
@@ -103,6 +151,7 @@ export type Database = {
           full_name: string
           id?: string
           is_active?: boolean | null
+          manager_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -114,6 +163,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_active?: boolean | null
+          manager_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -201,6 +251,36 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      whiteboards: {
+        Row: {
+          canvas_data: string | null
+          created_at: string
+          id: string
+          is_shared: boolean | null
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          canvas_data?: string | null
+          created_at?: string
+          id?: string
+          is_shared?: boolean | null
+          name?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          canvas_data?: string | null
+          created_at?: string
+          id?: string
+          is_shared?: boolean | null
+          name?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

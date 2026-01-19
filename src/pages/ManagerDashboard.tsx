@@ -18,19 +18,30 @@ interface StaffMember {
   email: string;
   role: string;
   is_active: boolean;
+  manager_id: string | null;
+}
+
+interface Task {
+  id: string;
+  status: string;
 }
 
 export default function ManagerDashboard() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStaffMembers = async () => {
+    const fetchData = async () => {
+      if (!user) return;
+
       try {
+        // Fetch staff members assigned to this manager
         const { data: profiles, error: profilesError } = await supabase
           .from("profiles")
           .select("*")
+          .eq("manager_id", user.id)
           .order("created_at", { ascending: false });
 
         if (profilesError) throw profilesError;
@@ -41,26 +52,49 @@ export default function ManagerDashboard() {
 
         if (rolesError) throw rolesError;
 
-        // Filter out super_admin - managers can only see staff
         const combined = profiles?.map((p) => ({
           ...p,
           role: roles?.find((r) => r.user_id === p.user_id)?.role || "staff",
-        })).filter(m => m.role === "staff") || [];
+        })) || [];
 
         setStaffMembers(combined);
+
+        // Fetch tasks created by or assigned to team members
+        const teamUserIds = combined.map((m) => m.user_id);
+        
+        if (teamUserIds.length > 0) {
+          const { data: taskData, error: taskError } = await supabase
+            .from("tasks")
+            .select("id, status")
+            .or(`created_by.in.(${teamUserIds.join(",")})`);
+
+          if (!taskError && taskData) {
+            setTasks(taskData);
+          }
+        }
       } catch (error) {
-        console.error("Error fetching staff:", error);
+        console.error("Error fetching data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStaffMembers();
-  }, []);
+    fetchData();
+  }, [user]);
+
+  const tasksByStatus = [
+    { status: "To Do", count: tasks.filter((t) => t.status === "todo").length, color: "bg-muted-foreground" },
+    { status: "In Progress", count: tasks.filter((t) => t.status === "in_progress").length, color: "bg-warning" },
+    { status: "Done", count: tasks.filter((t) => t.status === "done").length, color: "bg-success" },
+  ];
+
+  const totalTasks = tasks.length;
+  const pendingTasks = tasks.filter((t) => t.status !== "done").length;
+  const completedTasks = tasks.filter((t) => t.status === "done").length;
 
   const stats = [
     {
-      title: "Staff Members",
+      title: "Team Members",
       value: staffMembers.length.toString(),
       icon: Users,
       color: "text-primary",
@@ -68,34 +102,26 @@ export default function ManagerDashboard() {
     },
     {
       title: "Active Today",
-      value: staffMembers.filter(s => s.is_active).length.toString(),
+      value: staffMembers.filter((s) => s.is_active).length.toString(),
       icon: Clock,
       color: "text-success",
       bgColor: "bg-success/10",
     },
     {
       title: "Pending Tasks",
-      value: "0",
+      value: pendingTasks.toString(),
       icon: CheckSquare,
       color: "text-warning",
       bgColor: "bg-warning/10",
     },
     {
       title: "Completed This Week",
-      value: "0",
+      value: completedTasks.toString(),
       icon: TrendingUp,
       color: "text-info",
       bgColor: "bg-info/10",
     },
   ];
-
-  const tasksByStatus = [
-    { status: "To Do", count: 0, color: "bg-muted-foreground" },
-    { status: "In Progress", count: 0, color: "bg-warning" },
-    { status: "Done", count: 0, color: "bg-success" },
-  ];
-
-  const totalTasks = tasksByStatus.reduce((sum, t) => sum + t.count, 0);
 
   return (
     <div className="space-y-6">
@@ -161,7 +187,7 @@ export default function ManagerDashboard() {
         {/* Staff List */}
         <Card className="border-border shadow-sm lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-lg">Your Staff</CardTitle>
+            <CardTitle className="text-lg">Your Team</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -169,7 +195,8 @@ export default function ManagerDashboard() {
             ) : staffMembers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Users className="mx-auto h-12 w-12 opacity-50" />
-                <p className="mt-2">No staff members assigned yet</p>
+                <p className="mt-2">No team members assigned yet</p>
+                <p className="text-sm">Ask your admin to assign staff to your team</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -180,7 +207,7 @@ export default function ManagerDashboard() {
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                        {member.full_name.split(" ").map(n => n[0]).join("").toUpperCase()}
+                        {member.full_name.split(" ").map((n) => n[0]).join("").toUpperCase()}
                       </div>
                       <div>
                         <p className="font-medium text-foreground">{member.full_name}</p>

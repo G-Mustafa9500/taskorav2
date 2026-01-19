@@ -15,8 +15,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Search,
-  Plus,
   Mail,
   Calendar,
   Trash2,
@@ -39,6 +45,12 @@ interface StaffMember {
   role: string;
   is_active: boolean;
   created_at: string;
+  manager_id: string | null;
+}
+
+interface Manager {
+  user_id: string;
+  full_name: string;
 }
 
 export default function Staff() {
@@ -47,11 +59,13 @@ export default function Staff() {
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [managers, setManagers] = useState<Manager[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddUser, setShowAddUser] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [assigning, setAssigning] = useState<string | null>(null);
 
   const isSuperAdmin = userRole === "super_admin";
 
@@ -76,6 +90,12 @@ export default function Staff() {
       })) || [];
 
       setStaffMembers(combined);
+
+      // Extract managers for team assignment
+      const managerList = combined
+        .filter((m) => m.role === "manager")
+        .map((m) => ({ user_id: m.user_id, full_name: m.full_name }));
+      setManagers(managerList);
     } catch (error) {
       console.error("Error fetching staff:", error);
       toast({
@@ -130,6 +150,35 @@ export default function Staff() {
     }
   };
 
+  const handleAssignManager = async (staffUserId: string, managerId: string | null) => {
+    setAssigning(staffUserId);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ manager_id: managerId === "none" ? null : managerId })
+        .eq("user_id", staffUserId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Team updated",
+        description: managerId && managerId !== "none"
+          ? "Staff assigned to manager"
+          : "Staff removed from team",
+      });
+
+      fetchStaffMembers();
+    } catch (error: any) {
+      toast({
+        title: "Failed to assign team",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAssigning(null);
+    }
+  };
+
   const filteredStaff = staffMembers.filter(
     (staff) =>
       staff.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -165,6 +214,11 @@ export default function Staff() {
       day: "numeric",
       year: "numeric",
     });
+  };
+
+  const getManagerName = (managerId: string | null) => {
+    if (!managerId) return null;
+    return managers.find((m) => m.user_id === managerId)?.full_name;
   };
 
   return (
@@ -257,6 +311,13 @@ export default function Staff() {
                     {formatDate(staff.created_at)}
                   </span>
                 </div>
+
+                {/* Team assignment indicator */}
+                {staff.role === "staff" && staff.manager_id && (
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Team: {getManagerName(staff.manager_id)}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -298,6 +359,36 @@ export default function Staff() {
                   <span className="text-foreground">Joined {formatDate(selectedStaff.created_at)}</span>
                 </div>
               </div>
+
+              {/* Team Assignment (Super Admin only, for staff members) */}
+              {isSuperAdmin && selectedStaff.role === "staff" && managers.length > 0 && (
+                <div className="mt-6 space-y-2">
+                  <label className="text-sm font-medium">Assign to Manager</label>
+                  <Select
+                    value={selectedStaff.manager_id || "none"}
+                    onValueChange={(value) => handleAssignManager(selectedStaff.user_id, value)}
+                    disabled={assigning === selectedStaff.user_id}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a manager" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Manager</SelectItem>
+                      {managers.map((manager) => (
+                        <SelectItem key={manager.user_id} value={manager.user_id}>
+                          {manager.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {assigning === selectedStaff.user_id && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Updating...
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Actions */}
               {isSuperAdmin && selectedStaff.role !== "super_admin" && (
