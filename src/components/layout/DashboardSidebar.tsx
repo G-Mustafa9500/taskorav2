@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -13,25 +13,81 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Users, label: "Staff", path: "/staff" },
-  { icon: CheckSquare, label: "Tasks", path: "/tasks" },
-  { icon: Clock, label: "Attendance", path: "/attendance" },
-  { icon: FolderOpen, label: "Files", path: "/files" },
-  { icon: Palette, label: "Whiteboard", path: "/whiteboard" },
-  { icon: MessageCircle, label: "Chat", path: "/chat" },
-  { icon: Bell, label: "Notifications", path: "/notifications" },
-  { icon: Settings, label: "Settings", path: "/settings" },
-];
+const getMenuItems = (role: AppRole | null) => {
+  const baseItems = [
+    { icon: CheckSquare, label: "Tasks", path: "/tasks" },
+    { icon: FolderOpen, label: "Files", path: "/files" },
+    { icon: Palette, label: "Whiteboard", path: "/whiteboard" },
+    { icon: MessageCircle, label: "Chat", path: "/chat" },
+    { icon: Bell, label: "Notifications", path: "/notifications" },
+    { icon: Settings, label: "Settings", path: "/settings" },
+  ];
+
+  if (role === "super_admin") {
+    return [
+      { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
+      { icon: Users, label: "Staff", path: "/staff" },
+      { icon: Clock, label: "Attendance", path: "/attendance" },
+      ...baseItems,
+    ];
+  }
+
+  if (role === "manager") {
+    return [
+      { icon: LayoutDashboard, label: "Dashboard", path: "/manager" },
+      { icon: Users, label: "Staff", path: "/staff" },
+      { icon: Clock, label: "Attendance", path: "/attendance" },
+      ...baseItems,
+    ];
+  }
+
+  // Staff
+  return [
+    { icon: LayoutDashboard, label: "Dashboard", path: "/staff-dashboard" },
+    ...baseItems,
+  ];
+};
 
 export function DashboardSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const { profile, role, signOut } = useAuth();
+
+  const menuItems = getMenuItems(role);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/");
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getRoleBadge = (role: AppRole | null) => {
+    switch (role) {
+      case "super_admin":
+        return "Super Admin";
+      case "manager":
+        return "Manager";
+      case "staff":
+        return "Staff";
+      default:
+        return "";
+    }
+  };
 
   return (
     <aside
@@ -43,7 +99,7 @@ export function DashboardSidebar() {
       {/* Logo */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         {!collapsed && (
-          <Link to="/dashboard" className="flex items-center gap-2">
+          <Link to={role === "super_admin" ? "/admin" : role === "manager" ? "/manager" : "/staff-dashboard"} className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <CheckSquare className="h-5 w-5 text-primary-foreground" />
             </div>
@@ -102,21 +158,22 @@ export function DashboardSidebar() {
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-            JD
+            {profile ? getInitials(profile.full_name) : "?"}
           </div>
           {!collapsed && (
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium text-foreground">
-                John Doe
+                {profile?.full_name || "Loading..."}
               </p>
-              <p className="truncate text-xs text-muted-foreground">Manager</p>
+              <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
+                {role === "super_admin" && <Shield className="h-3 w-3" />}
+                {getRoleBadge(role)}
+              </p>
             </div>
           )}
           {!collapsed && (
-            <Button variant="ghost" size="icon" className="shrink-0" asChild>
-              <Link to="/">
-                <LogOut className="h-4 w-4" />
-              </Link>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={handleLogout}>
+              <LogOut className="h-4 w-4" />
             </Button>
           )}
         </div>
