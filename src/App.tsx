@@ -21,6 +21,7 @@ import Chat from "./pages/Chat";
 import Notifications from "./pages/Notifications";
 import Whiteboard from "./pages/Whiteboard";
 import Settings from "./pages/Settings";
+import AIAssistant from "./pages/AIAssistant";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,7 @@ const App = () => (
               <Route path="/attendance" element={<Attendance />} />
               <Route path="/files" element={<Files />} />
               <Route path="/chat" element={<Chat />} />
+              <Route path="/ai-assistant" element={<AIAssistant />} />
               <Route path="/notifications" element={<Notifications />} />
               <Route path="/whiteboard" element={<Whiteboard />} />
               <Route path="/settings" element={<Settings />} />
