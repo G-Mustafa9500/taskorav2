@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 // Pages
 import Landing from "./pages/Landing";
@@ -50,21 +51,33 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
 
-            {/* Dashboard Routes */}
-            <Route element={<DashboardLayout />}>
-              <Route path="/dashboard" element={<RoleBasedRedirect />} />
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/manager" element={<ManagerDashboard />} />
-              <Route path="/staff-dashboard" element={<StaffDashboard />} />
-              <Route path="/staff" element={<Staff />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/attendance" element={<Attendance />} />
-              <Route path="/files" element={<Files />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/ai-assistant" element={<AIAssistant />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/whiteboard" element={<Whiteboard />} />
-              <Route path="/settings" element={<Settings />} />
+            {/* Protected Dashboard Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<DashboardLayout />}>
+                <Route path="/dashboard" element={<RoleBasedRedirect />} />
+                
+                {/* Super Admin Only */}
+                <Route element={<ProtectedRoute allowedRoles={["super_admin"]} />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/staff" element={<Staff />} />
+                </Route>
+                
+                {/* Super Admin & Manager */}
+                <Route element={<ProtectedRoute allowedRoles={["super_admin", "manager"]} />}>
+                  <Route path="/manager" element={<ManagerDashboard />} />
+                </Route>
+                
+                {/* All authenticated users */}
+                <Route path="/staff-dashboard" element={<StaffDashboard />} />
+                <Route path="/tasks" element={<Tasks />} />
+                <Route path="/attendance" element={<Attendance />} />
+                <Route path="/files" element={<Files />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/ai-assistant" element={<AIAssistant />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/whiteboard" element={<Whiteboard />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
             </Route>
 
             {/* 404 */}
