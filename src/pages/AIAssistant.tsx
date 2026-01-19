@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Send, Sparkles, HelpCircle, FileText, Users, Clock } from "lucide-react";
+import { Bot, Send, Sparkles, HelpCircle, FileText, Users, Clock, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
   content: string;
-  isBot: boolean;
+  role: "user" | "assistant";
   timestamp: string;
 }
 
@@ -22,13 +23,7 @@ const quickActions = [
   { icon: Clock, label: "Track attendance", query: "How does attendance tracking work?" },
 ];
 
-const botResponses: Record<string, string> = {
-  default: "I'm your Taskora AI Assistant! I can help you navigate the system, explain features, and answer questions about task management. What would you like to know?",
-  "how do i use taskora": "Taskora is a comprehensive company management system. Here's how to get started:\n\n1. **Dashboard** - View your overview, tasks, and team updates\n2. **Tasks** - Create, assign, and track tasks\n3. **Staff** - Manage team members (Admin/Manager only)\n4. **Attendance** - Track daily attendance\n5. **Files** - Upload and share documents\n6. **Whiteboard** - Collaborate visually\n\nNeed help with something specific?",
-  "how do i create a new task": "To create a new task:\n\n1. Go to the **Tasks** page from the sidebar\n2. Click the **Add Task** button\n3. Fill in the task details:\n   - Title\n   - Description\n   - Priority (Low, Medium, High)\n   - Due date\n   - Assignee\n4. Click **Create Task**\n\nYou can also assign tasks to team members and set deadlines!",
-  "how do i manage my team members": "Team management is available for Super Admins and Managers:\n\n1. Go to **Staff** page from the sidebar\n2. Here you can:\n   - View all team members\n   - Add new staff using the **Add Staff** button\n   - Remove team members\n   - View member details\n\nYou can also manage team settings from **Settings > Team**.",
-  "how does attendance tracking work": "Attendance tracking in Taskora:\n\n1. Go to the **Attendance** page\n2. Staff can check in/out daily\n3. Managers can:\n   - View team attendance\n   - See attendance reports\n   - Track working hours\n4. Super Admins have access to all attendance data\n\nAttendance is recorded automatically with timestamps.",
-};
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 
 export default function AIAssistant() {
   const { profile } = useAuth();
@@ -36,12 +31,12 @@ export default function AIAssistant() {
     {
       id: "1",
       content: "👋 Hello! I'm Taskora AI, your helpful assistant. I can help you understand how to use Taskora, explain features, and answer your questions. How can I assist you today?",
-      isBot: true,
+      role: "assistant",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -52,58 +47,110 @@ export default function AIAssistant() {
     scrollToBottom();
   }, [messages]);
 
-  const getBotResponse = (query: string): string => {
-    const lowerQuery = query.toLowerCase().trim();
-    
-    for (const [key, response] of Object.entries(botResponses)) {
-      if (lowerQuery.includes(key) || key.includes(lowerQuery)) {
-        return response;
-      }
-    }
-    
-    if (lowerQuery.includes("task")) {
-      return botResponses["how do i create a new task"];
-    }
-    if (lowerQuery.includes("team") || lowerQuery.includes("staff") || lowerQuery.includes("member")) {
-      return botResponses["how do i manage my team members"];
-    }
-    if (lowerQuery.includes("attendance") || lowerQuery.includes("check in")) {
-      return botResponses["how does attendance tracking work"];
-    }
-    if (lowerQuery.includes("help") || lowerQuery.includes("how") || lowerQuery.includes("what")) {
-      return botResponses["how do i use taskora"];
-    }
-    
-    return "I understand you're asking about: \"" + query + "\". I'm here to help with Taskora-related questions like:\n\n• How to use different features\n• Managing tasks and teams\n• Attendance tracking\n• File management\n• And more!\n\nCould you please rephrase your question or choose from the quick actions below?";
-  };
-
   const handleSend = async (query?: string) => {
     const messageContent = query || input;
-    if (!messageContent.trim()) return;
+    if (!messageContent.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       content: messageContent,
-      isBot: false,
+      role: "user",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    setIsTyping(true);
+    setIsLoading(true);
 
-    // Simulate typing delay
-    await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+    let assistantContent = "";
+    
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage].map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
 
-    const botResponse: Message = {
-      id: (Date.now() + 1).toString(),
-      content: getBotResponse(messageContent),
-      isBot: true,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        if (resp.status === 429) {
+          toast.error("Rate limit exceeded. Please try again later.");
+        } else if (resp.status === 402) {
+          toast.error("AI credits exhausted. Please contact admin.");
+        } else {
+          toast.error(errorData.error || "Failed to get AI response");
+        }
+        setIsLoading(false);
+        return;
+      }
 
-    setMessages((prev) => [...prev, botResponse]);
-    setIsTyping(false);
+      if (!resp.body) throw new Error("No response body");
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+
+      // Add empty assistant message to start streaming into
+      const assistantId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantId,
+          content: "",
+          role: "assistant",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              assistantContent += content;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: assistantContent } : m
+                )
+              );
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("AI chat error:", error);
+      toast.error("Failed to connect to AI assistant");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -127,7 +174,7 @@ export default function AIAssistant() {
             AI Assistant
             <Badge variant="secondary" className="text-xs">
               <Sparkles className="h-3 w-3 mr-1" />
-              Beta
+              Powered by AI
             </Badge>
           </h1>
           <p className="text-muted-foreground">
@@ -149,6 +196,7 @@ export default function AIAssistant() {
                 variant="outline"
                 className="w-full justify-start gap-2 h-auto py-3"
                 onClick={() => handleSend(action.query)}
+                disabled={isLoading}
               >
                 <action.icon className="h-4 w-4 shrink-0 text-primary" />
                 <span className="text-left text-sm">{action.label}</span>
@@ -165,17 +213,17 @@ export default function AIAssistant() {
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${message.isBot ? "" : "flex-row-reverse"}`}
+                  className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
                 >
                   <Avatar className="h-8 w-8 shrink-0">
                     <AvatarFallback
                       className={
-                        message.isBot
+                        message.role === "assistant"
                           ? "bg-gradient-to-br from-primary to-primary/60 text-primary-foreground"
                           : "bg-primary/10 text-primary"
                       }
                     >
-                      {message.isBot ? (
+                      {message.role === "assistant" ? (
                         <Bot className="h-4 w-4" />
                       ) : (
                         getInitials(profile?.full_name || "You")
@@ -184,17 +232,17 @@ export default function AIAssistant() {
                   </Avatar>
                   <div
                     className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      message.isBot
-                        ? "bg-muted"
-                        : "bg-primary text-primary-foreground"
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
                     }`}
                   >
                     <p className="text-sm whitespace-pre-line">{message.content}</p>
                     <p
                       className={`mt-1 text-xs ${
-                        message.isBot
-                          ? "text-muted-foreground"
-                          : "text-primary-foreground/70"
+                        message.role === "user"
+                          ? "text-primary-foreground/70"
+                          : "text-muted-foreground"
                       }`}
                     >
                       {message.timestamp}
@@ -202,7 +250,7 @@ export default function AIAssistant() {
                   </div>
                 </div>
               ))}
-              {isTyping && (
+              {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex gap-3">
                   <Avatar className="h-8 w-8 shrink-0">
                     <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
@@ -229,15 +277,16 @@ export default function AIAssistant() {
                 placeholder="Ask me anything about Taskora..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
                 className="flex-1"
+                disabled={isLoading}
               />
-              <Button onClick={() => handleSend()} disabled={!input.trim() || isTyping}>
-                <Send className="h-4 w-4" />
+              <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading}>
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>
             <p className="mt-2 text-xs text-center text-muted-foreground">
-              AI Assistant helps with Taskora features only. For complex queries, contact support.
+              AI Assistant powered by Lovable AI
             </p>
           </div>
         </Card>

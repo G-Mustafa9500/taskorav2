@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,82 +11,21 @@ import {
   MessageCircle,
   Check,
   X,
+  Loader2,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 interface Notification {
   id: string;
-  type: "task" | "user" | "file" | "message";
+  type: "task" | "user" | "file" | "message" | "system";
   title: string;
   description: string;
-  time: string;
   read: boolean;
-  avatar?: string;
+  created_at: string;
 }
-
-const initialNotifications: Notification[] = [
-  {
-    id: "1",
-    type: "task",
-    title: "Task Assigned",
-    description: 'You have been assigned to "Design Homepage"',
-    time: "5 min ago",
-    read: false,
-    avatar: "SJ",
-  },
-  {
-    id: "2",
-    type: "message",
-    title: "New Message",
-    description: "Sarah Johnson sent you a message",
-    time: "12 min ago",
-    read: false,
-    avatar: "SJ",
-  },
-  {
-    id: "3",
-    type: "task",
-    title: "Task Completed",
-    description: 'Mike Chen completed "API Integration"',
-    time: "1 hour ago",
-    read: false,
-    avatar: "MC",
-  },
-  {
-    id: "4",
-    type: "file",
-    title: "File Uploaded",
-    description: "Emma Wilson uploaded Q4 Report.pdf",
-    time: "2 hours ago",
-    read: true,
-    avatar: "EW",
-  },
-  {
-    id: "5",
-    type: "user",
-    title: "Profile Updated",
-    description: "Alex Kumar updated their profile",
-    time: "3 hours ago",
-    read: true,
-    avatar: "AK",
-  },
-  {
-    id: "6",
-    type: "task",
-    title: "Task Status Changed",
-    description: '"Dashboard Analytics" moved to In Progress',
-    time: "5 hours ago",
-    read: true,
-  },
-  {
-    id: "7",
-    type: "message",
-    title: "New Message",
-    description: "Lisa Park sent you a message",
-    time: "1 day ago",
-    read: true,
-    avatar: "LP",
-  },
-];
 
 const getNotificationIcon = (type: string) => {
   switch (type) {
@@ -119,8 +58,34 @@ const getNotificationColor = (type: string) => {
 };
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+
+  const fetchNotifications = async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setNotifications((data as Notification[]) || []);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      toast.error("Failed to load notifications");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [user]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -129,19 +94,67 @@ export default function Notifications() {
     return true;
   });
 
-  const markAsRead = (id: string) => {
-    setNotifications(
-      notifications.map((n) => (n.id === id ? { ...n, read: true } : n))
+  const markAsRead = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ read: true })
+        .eq("id", id);
+
+      if (error) throw error;
+      
+      setNotifications(
+        notifications.map((n) => (n.id === id ? { ...n, read: true } : n))
+      );
+    } catch (error) {
+      console.error("Error marking as read:", error);
+      toast.error("Failed to update notification");
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!user) return;
+    
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ read: true })
+        .eq("user_id", user.id)
+        .eq("read", false);
+
+      if (error) throw error;
+      
+      setNotifications(notifications.map((n) => ({ ...n, read: true })));
+      toast.success("All notifications marked as read");
+    } catch (error) {
+      console.error("Error marking all as read:", error);
+      toast.error("Failed to update notifications");
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      
+      setNotifications(notifications.filter((n) => n.id !== id));
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+      toast.error("Failed to delete notification");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, read: true })));
-  };
-
-  const deleteNotification = (id: string) => {
-    setNotifications(notifications.filter((n) => n.id !== id));
-  };
+  }
 
   return (
     <div className="space-y-6">
@@ -208,7 +221,7 @@ export default function Notifications() {
                           </p>
                         </div>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {notification.time}
+                          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
                         </span>
                       </div>
                       <div className="mt-3 flex items-center gap-2">
@@ -233,11 +246,6 @@ export default function Notifications() {
                         </Button>
                       </div>
                     </div>
-                    {notification.avatar && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                        {notification.avatar}
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               );

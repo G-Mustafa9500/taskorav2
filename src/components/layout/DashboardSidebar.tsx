@@ -26,7 +26,7 @@ const getMenuItems = (role: AppRole | null) => {
     { icon: CheckSquare, label: "Tasks", path: "/tasks" },
     { icon: FolderOpen, label: "Files", path: "/files" },
     { icon: Palette, label: "Whiteboard", path: "/whiteboard" },
-    { icon: MessageCircle, label: "Chat", path: "/chat", comingSoon: true },
+    { icon: MessageCircle, label: "Chat", path: "/chat", comingSoon: true, disabled: true },
     { icon: Bot, label: "AI Assistant", path: "/ai-assistant" },
     { icon: Bell, label: "Notifications", path: "/notifications" },
     { icon: Settings, label: "Settings", path: "/settings" },
@@ -118,33 +118,48 @@ export function DashboardSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {menuItems.map((item) => {
+      {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
-          const itemWithBadge = item as typeof item & { comingSoon?: boolean };
+          const itemWithBadge = item as typeof item & { comingSoon?: boolean; disabled?: boolean };
+          const isDisabled = itemWithBadge.disabled || itemWithBadge.comingSoon;
+          
+          if (isDisabled) {
+            return (
+              <div
+                key={item.path}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium cursor-not-allowed opacity-60",
+                  "text-muted-foreground"
+                )}
+              >
+                <item.icon className="h-5 w-5 shrink-0" />
+                {!collapsed && (
+                  <span className="flex items-center gap-2">
+                    {item.label}
+                    {itemWithBadge.comingSoon && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        Soon
+                      </Badge>
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          }
+          
           return (
             <Link
               key={item.path}
-              to={itemWithBadge.comingSoon ? "#" : item.path}
-              onClick={(e) => itemWithBadge.comingSoon && e.preventDefault()}
+              to={item.path}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                isActive && !itemWithBadge.comingSoon
+                isActive
                   ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                itemWithBadge.comingSoon && "cursor-not-allowed opacity-60"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && (
-                <span className="flex items-center gap-2">
-                  {item.label}
-                  {itemWithBadge.comingSoon && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      Soon
-                    </Badge>
-                  )}
-                </span>
-              )}
+              {!collapsed && <span>{item.label}</span>}
             </Link>
           );
         })}

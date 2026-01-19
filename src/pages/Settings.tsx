@@ -9,12 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "next-themes";
 import {
   Building2,
   User,
   Bell,
   Shield,
-  Palette,
   Users,
   Plus,
   Trash2,
@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { AddUserDialog } from "@/components/admin/AddUserDialog";
 
 interface TeamMember {
   id: string;
@@ -40,11 +41,50 @@ interface TeamMember {
   role: string;
 }
 
+interface NotificationSetting {
+  key: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+}
+
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
+  
+  // Form states
+  const [companyName, setCompanyName] = useState(profile?.company_name || "Taskora Inc.");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  
+  // Notification settings stored in localStorage
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSetting[]>([
+    { key: "task_assignments", title: "Task Assignments", description: "When you're assigned to a task", enabled: true },
+    { key: "task_updates", title: "Task Updates", description: "When task status changes", enabled: true },
+    { key: "new_messages", title: "New Messages", description: "When you receive a new message", enabled: true },
+    { key: "file_uploads", title: "File Uploads", description: "When someone uploads a file", enabled: false },
+    { key: "team_changes", title: "Team Changes", description: "When team members are added or removed", enabled: true },
+  ]);
+
+  useEffect(() => {
+    // Load notification settings from localStorage
+    const saved = localStorage.getItem("notification_settings");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setNotificationSettings((prev) =>
+          prev.map((s) => ({ ...s, enabled: parsed[s.key] ?? s.enabled }))
+        );
+      } catch {}
+    }
+  }, []);
 
   const fetchTeamMembers = async () => {
     try {
@@ -124,6 +164,74 @@ export default function Settings() {
     }
   };
 
+  const handleSaveGeneral = async () => {
+    if (!user) return;
+    setSavingGeneral(true);
+    
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ company_name: companyName })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+      toast.success("Settings saved successfully");
+    } catch (error: any) {
+      console.error("Error saving settings:", error);
+      toast.error(error.message || "Failed to save settings");
+    } finally {
+      setSavingGeneral(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      toast.error("Please fill in all password fields");
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      toast.success("Password updated successfully");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      console.error("Error changing password:", error);
+      toast.error(error.message || "Failed to change password");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleNotificationToggle = (key: string, enabled: boolean) => {
+    const updated = notificationSettings.map((s) =>
+      s.key === key ? { ...s, enabled } : s
+    );
+    setNotificationSettings(updated);
+    
+    // Save to localStorage
+    const settings = updated.reduce((acc, s) => ({ ...acc, [s.key]: s.enabled }), {});
+    localStorage.setItem("notification_settings", JSON.stringify(settings));
+    toast.success("Notification preferences saved");
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -190,22 +298,21 @@ export default function Settings() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="companyName">Company Name</Label>
-                  <Input id="companyName" defaultValue="Taskora Inc." />
+                  <Input 
+                    id="companyName" 
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
-                  <Input id="industry" defaultValue="Technology" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="website">Website</Label>
-                  <Input id="website" defaultValue="https://taskora.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="timezone">Timezone</Label>
-                  <Input id="timezone" defaultValue="America/New_York" />
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" value={profile?.email || ""} disabled />
                 </div>
               </div>
-              <Button>Save Changes</Button>
+              <Button onClick={handleSaveGeneral} disabled={savingGeneral}>
+                {savingGeneral ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Save Changes
+              </Button>
             </CardContent>
           </Card>
 
@@ -222,16 +329,10 @@ export default function Settings() {
                     Switch between light and dark themes
                   </p>
                 </div>
-                <Switch />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Compact Mode</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Reduce spacing for more content
-                  </p>
-                </div>
-                <Switch />
+                <Switch 
+                  checked={theme === "dark"}
+                  onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                />
               </div>
             </CardContent>
           </Card>
@@ -247,7 +348,7 @@ export default function Settings() {
                   Manage your team and their roles
                 </CardDescription>
               </div>
-              <Button>
+              <Button onClick={() => setShowAddUser(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Member
               </Button>
@@ -348,24 +449,21 @@ export default function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {[
-                { title: "Task Assignments", description: "When you're assigned to a task" },
-                { title: "Task Updates", description: "When task status changes" },
-                { title: "New Messages", description: "When you receive a new message" },
-                { title: "File Uploads", description: "When someone uploads a file" },
-                { title: "Team Changes", description: "When team members are added or removed" },
-              ].map((item) => (
+              {notificationSettings.map((setting) => (
                 <div
-                  key={item.title}
+                  key={setting.key}
                   className="flex items-center justify-between"
                 >
                   <div className="space-y-0.5">
-                    <Label>{item.title}</Label>
+                    <Label>{setting.title}</Label>
                     <p className="text-sm text-muted-foreground">
-                      {item.description}
+                      {setting.description}
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={setting.enabled}
+                    onCheckedChange={(checked) => handleNotificationToggle(setting.key, checked)}
+                  />
                 </div>
               ))}
             </CardContent>
@@ -384,55 +482,34 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="max-w-md space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="currentPassword">Current Password</Label>
-                  <Input id="currentPassword" type="password" />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
-                  <Input id="newPassword" type="password" />
+                  <Input 
+                    id="newPassword" 
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                  <Input id="confirmPassword" type="password" />
+                  <Input 
+                    id="confirmPassword" 
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
                 </div>
-                <Button>Update Password</Button>
+                <Button onClick={handleChangePassword} disabled={savingPassword}>
+                  {savingPassword ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Update Password
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg">Two-Factor Authentication</CardTitle>
-              <CardDescription>
-                Add an extra layer of security to your account
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Enable 2FA</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Require a code in addition to your password
-                  </p>
-                </div>
-                <Switch />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border border-destructive/50 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
-              <CardDescription>
-                Irreversible and destructive actions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="destructive">Delete Workspace</Button>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AddUserDialog open={showAddUser} onOpenChange={setShowAddUser} onUserAdded={fetchTeamMembers} />
     </div>
   );
 }

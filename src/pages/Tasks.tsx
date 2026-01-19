@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -25,83 +25,24 @@ import {
   Calendar,
   Users,
   MoreHorizontal,
+  Loader2,
+  Trash2,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface Task {
   id: string;
   title: string;
-  description: string;
+  description: string | null;
   status: "todo" | "in_progress" | "done";
   priority: "low" | "medium" | "high";
-  assignees: string[];
-  dueDate: string;
+  due_date: string | null;
+  created_by: string;
+  assignees?: string[];
 }
-
-const initialTasks: Task[] = [
-  {
-    id: "1",
-    title: "Design System Update",
-    description: "Update the design tokens and component library",
-    status: "todo",
-    priority: "high",
-    assignees: ["SJ", "MC"],
-    dueDate: "Jan 20",
-  },
-  {
-    id: "2",
-    title: "API Integration",
-    description: "Connect frontend with backend APIs",
-    status: "todo",
-    priority: "medium",
-    assignees: ["EW"],
-    dueDate: "Jan 22",
-  },
-  {
-    id: "3",
-    title: "User Authentication",
-    description: "Implement login and signup flows",
-    status: "in_progress",
-    priority: "high",
-    assignees: ["MC", "EW"],
-    dueDate: "Jan 18",
-  },
-  {
-    id: "4",
-    title: "Dashboard Analytics",
-    description: "Add charts and data visualization",
-    status: "in_progress",
-    priority: "medium",
-    assignees: ["AK"],
-    dueDate: "Jan 25",
-  },
-  {
-    id: "5",
-    title: "Mobile Responsive",
-    description: "Ensure all pages work on mobile devices",
-    status: "in_progress",
-    priority: "low",
-    assignees: ["SJ"],
-    dueDate: "Jan 28",
-  },
-  {
-    id: "6",
-    title: "Unit Tests",
-    description: "Write tests for core components",
-    status: "done",
-    priority: "medium",
-    assignees: ["MC"],
-    dueDate: "Jan 15",
-  },
-  {
-    id: "7",
-    title: "Documentation",
-    description: "Create technical documentation",
-    status: "done",
-    priority: "low",
-    assignees: ["LP"],
-    dueDate: "Jan 14",
-  },
-];
 
 const columns = [
   { id: "todo", title: "To Do", color: "bg-muted-foreground" },
@@ -121,15 +62,39 @@ const getPriorityColor = (priority: string) => {
 };
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [newTask, setNewTask] = useState({
     title: "",
     description: "",
     priority: "medium",
     dueDate: "",
   });
+
+  const fetchTasks = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setTasks((data as Task[]) || []);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      toast.error("Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
 
   const handleDragStart = (e: React.DragEvent, task: Task) => {
     setDraggedTask(task);
@@ -141,32 +106,82 @@ export default function Tasks() {
     e.dataTransfer.dropEffect = "move";
   };
 
-  const handleDrop = (e: React.DragEvent, status: Task["status"]) => {
+  const handleDrop = async (e: React.DragEvent, status: Task["status"]) => {
     e.preventDefault();
-    if (draggedTask && draggedTask.status !== status) {
-      setTasks(
-        tasks.map((task) =>
-          task.id === draggedTask.id ? { ...task, status } : task
-        )
-      );
+    if (!draggedTask || draggedTask.status === status) {
+      setDraggedTask(null);
+      return;
     }
+
+    // Optimistic update
+    setTasks(tasks.map((task) =>
+      task.id === draggedTask.id ? { ...task, status } : task
+    ));
+
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status })
+        .eq("id", draggedTask.id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast.error("Failed to update task status");
+      fetchTasks(); // Revert on error
+    }
+    
     setDraggedTask(null);
   };
 
-  const handleCreateTask = () => {
-    const task: Task = {
-      id: Date.now().toString(),
-      title: newTask.title,
-      description: newTask.description,
-      status: "todo",
-      priority: newTask.priority as Task["priority"],
-      assignees: [],
-      dueDate: newTask.dueDate || "TBD",
-    };
-    setTasks([task, ...tasks]);
-    setNewTask({ title: "", description: "", priority: "medium", dueDate: "" });
-    setIsDialogOpen(false);
+  const handleCreateTask = async () => {
+    if (!user || !newTask.title) return;
+    setCreating(true);
+
+    try {
+      const { error } = await supabase.from("tasks").insert({
+        title: newTask.title,
+        description: newTask.description || null,
+        priority: newTask.priority,
+        due_date: newTask.dueDate || null,
+        created_by: user.id,
+        status: "todo",
+      });
+
+      if (error) throw error;
+
+      toast.success("Task created successfully");
+      setNewTask({ title: "", description: "", priority: "medium", dueDate: "" });
+      setIsDialogOpen(false);
+      fetchTasks();
+    } catch (error: any) {
+      console.error("Error creating task:", error);
+      toast.error(error.message || "Failed to create task");
+    } finally {
+      setCreating(false);
+    }
   };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+      if (error) throw error;
+      
+      setTasks(tasks.filter((t) => t.id !== taskId));
+      toast.success("Task deleted");
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast.error("Failed to delete task");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -196,9 +211,7 @@ export default function Tasks() {
                   id="title"
                   placeholder="Enter task title"
                   value={newTask.title}
-                  onChange={(e) =>
-                    setNewTask({ ...newTask, title: e.target.value })
-                  }
+                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -207,9 +220,7 @@ export default function Tasks() {
                   id="description"
                   placeholder="Enter task description"
                   value={newTask.description}
-                  onChange={(e) =>
-                    setNewTask({ ...newTask, description: e.target.value })
-                  }
+                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -217,9 +228,7 @@ export default function Tasks() {
                   <Label>Priority</Label>
                   <Select
                     value={newTask.priority}
-                    onValueChange={(value) =>
-                      setNewTask({ ...newTask, priority: value })
-                    }
+                    onValueChange={(value) => setNewTask({ ...newTask, priority: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />
@@ -237,17 +246,16 @@ export default function Tasks() {
                     id="dueDate"
                     type="date"
                     value={newTask.dueDate}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, dueDate: e.target.value })
-                    }
+                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
                   />
                 </div>
               </div>
               <Button
                 className="w-full"
                 onClick={handleCreateTask}
-                disabled={!newTask.title}
+                disabled={!newTask.title || creating}
               >
+                {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 Create Task
               </Button>
             </div>
@@ -275,9 +283,6 @@ export default function Tasks() {
                     {columnTasks.length}
                   </Badge>
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
 
               {/* Tasks */}
@@ -298,12 +303,19 @@ export default function Tasks() {
                           <h4 className="font-medium text-foreground">
                             {task.title}
                           </h4>
-                          <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                            {task.description}
-                          </p>
+                          {task.description && (
+                            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+                              {task.description}
+                            </p>
+                          )}
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-                          <MoreHorizontal className="h-4 w-4" />
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteTask(task.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
 
@@ -314,29 +326,13 @@ export default function Tasks() {
                         >
                           {task.priority}
                         </Badge>
-                        <div className="flex items-center gap-2">
+                        {task.due_date && (
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />
-                            <span>{task.dueDate}</span>
+                            <span>{format(new Date(task.due_date), "MMM d")}</span>
                           </div>
-                        </div>
+                        )}
                       </div>
-
-                      {task.assignees.length > 0 && (
-                        <div className="mt-3 flex items-center gap-1">
-                          <Users className="mr-1 h-3 w-3 text-muted-foreground" />
-                          <div className="flex -space-x-2">
-                            {task.assignees.map((assignee, index) => (
-                              <div
-                                key={index}
-                                className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-primary/10 text-[10px] font-medium text-primary"
-                              >
-                                {assignee}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </CardContent>
                   </Card>
                 ))}
